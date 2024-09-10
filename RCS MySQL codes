@@ -1,0 +1,27 @@
+create table production_results (
+   LOT varchar(20) primary key not null,      -- LOT
+    start_time datetime not null,            -- 시작 시간
+    A_Err char(1),                        -- A파트 에러(도포 불량)
+    A_delay int,                        -- A파트 에러 시간
+    A_Err_time datetime,                  -- A파트 에러 시점
+    Acount int,
+    B_Err char(1),                        -- B파트 에러(재단 불량)
+    B_delay int,                        -- B파트 에러 시간
+    B_Err_time datetime,                  -- B파트 에러 시점
+    Bcount int,
+    C_Err char(1),                        -- C파트 에러(파우치 실링 불량)
+    C_delay int,                        -- C파트 에러 시간
+    C_Err_time datetime,                  -- C파트 에러 시점
+    Ccount int,
+    defect_count int,                      -- 불량 수량
+    A_Sen tinyint,
+    B_Sen tinyint,
+    C_Sen tinyint,
+    Con_ST tinyint default 0
+    );
+ALTER TABLE production_results
+add column Con_ST tinyint default 0;
+
+select * from production_results order by LOT desc limit 1;
+
+select * from production_results;
