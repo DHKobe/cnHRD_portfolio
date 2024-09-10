@@ -1,0 +1,202 @@
+[
+    {
+        "id": "4fceb79b845bb7d1",
+        "type": "tab",
+        "label": "Data_Collecting_Flow",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "2893c0aa7ce6e1e0",
+        "type": "modbus-read",
+        "z": "4fceb79b845bb7d1",
+        "name": "ModbusRead",
+        "topic": "",
+        "showStatusActivities": false,
+        "logIOActivities": false,
+        "showErrors": false,
+        "showWarnings": true,
+        "unitid": "1",
+        "dataType": "HoldingRegister",
+        "adr": "0",
+        "quantity": "17",
+        "rate": "100",
+        "rateUnit": "ms",
+        "delayOnStart": false,
+        "startDelayTime": "",
+        "server": "c27c0fd653b5e9ed",
+        "useIOFile": false,
+        "ioFile": "",
+        "useIOForPayload": false,
+        "emptyMsgOnFail": false,
+        "x": 230,
+        "y": 220,
+        "wires": [
+            [
+                "638f0da1197f4e61",
+                "c8c300d7cde820f9",
+                "68892d80c088db66",
+                "911f2c8a90c80a25"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "b373674f87db4667",
+        "type": "mysql",
+        "z": "4fceb79b845bb7d1",
+        "mydb": "bb2303be41a436bf",
+        "name": "",
+        "x": 870,
+        "y": 220,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "638f0da1197f4e61",
+        "type": "function",
+        "z": "4fceb79b845bb7d1",
+        "name": "resin check",
+        "func": "const now = new Date();\nconst formattedDate = formatDate(now);\nvar inputPulse = flow.get('inputPulse');\n\nif (msg.payload[1] === 1 && inputPulse === 1) {\n    flow.set('errCount', 0);\n\n    // 정상 상황 (msg.payload[14] === 0)\n    if (msg.payload[14] === 0) {\n        msg.topic = `\n            INSERT INTO production_results \n            (LOT, start_time) \n            VALUES ('${formattedDate}', SYSDATE())\n        `;\n\n        flow.set('inputPulse', 0);\n        flow.set('productionLOT', formattedDate);\n\n    }\n    // 에러 발생 상황 (msg.payload[14] === 1)\n    else if (msg.payload[14] === 1) {\n        msg.topic = `\n            INSERT INTO production_results \n            (LOT, start_time, A_delay, A_Err, A_Err_time, defect_count) \n            VALUES (\n                '${formattedDate}', SYSDATE(),\n                ${msg.payload[7]}, '${msg.payload[10]}', SYSDATE(), \n                ${flow.get('errCount') + 1}\n            )\n        `;\n\n        flow.set('errCount', flow.get('errCount') + 1);\n        flow.set('inputPulse', 0);\n        flow.set('productionLOT', formattedDate);\n\n        // 센서 알람 기록 추가 (sensor_alarms 테이블에 삽입)\n        msg.topic_alarm = `\n            INSERT INTO sensor_alarms \n            (sensor_id, alarm_type, timestamp, sensor_stopT) \n            VALUES (1, ${msg.payload[10]}, SYSDATE(), ${msg.payload[7]})\n        `;\n    }\n\n} else if (msg.payload[1] === 0) {\n    flow.set('inputPulse', 1);\n}\n\nfunction formatDate(date) {\n    const year = date.getFullYear();\n    const month = ('0' + (date.getMonth() + 1)).slice(-2); // 월은 0부터 시작하므로 +1 필요\n    const day = ('0' + date.getDate()).slice(-2);\n    const hours = ('0' + date.getHours()).slice(-2);\n    const minutes = ('0' + date.getMinutes()).slice(-2);\n    const second = ('0' + date.getSeconds()).slice(-2);\n\n    return `${year}${month}${day}${hours}${minutes}${second}`;\n}\n\nreturn [msg, { topic: msg.topic_alarm }];\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 220,
+        "wires": [
+            [
+                "6a0e3eb59f13c897"
+            ]
+        ]
+    },
+    {
+        "id": "6a0e3eb59f13c897",
+        "type": "switch",
+        "z": "4fceb79b845bb7d1",
+        "name": "",
+        "property": "topic",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "neq",
+                "v": "polling",
+                "vt": "str"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 1,
+        "x": 650,
+        "y": 260,
+        "wires": [
+            [
+                "b373674f87db4667"
+            ]
+        ]
+    },
+    {
+        "id": "c8c300d7cde820f9",
+        "type": "function",
+        "z": "4fceb79b845bb7d1",
+        "name": "cutting check",
+        "func": "const now = new Date();\nconst formattedDate = formatDate(now);\nvar sen2_pulse = flow.get('sen2_pulse');\nvar productionCode = flow.get('productionLOT');\n\nif (msg.payload[2] === 1 && sen2_pulse === 1 && msg.payload[15] === 1) {\n\n    console.log(productionCode);\n    msg.topic =\n        `UPDATE rcs.production_results\n    SET B_delay = ${msg.payload[8]},\n        B_Err = '${msg.payload[11]}',\n        B_Err_time = SYSDATE(),\n        defect_count = ${flow.get('errCount') + 1}\n    WHERE LOT = '${productionCode}'`;\n\n    flow.set('sen2_pulse', 0);\n    flow.set('errCount', flow.get('errCount') + 1);\n\n    console.log('B 센서 에러 카운트: ' + flow.get('errCount'));\n\n} else if (msg.payload[2] === 0) {\n    flow.set('sen2_pulse', 1);\n}\n\nfunction formatDate(date) {\n    const year = date.getFullYear();\n    const month = ('0' + (date.getMonth() + 1)).slice(-2);  // 월은 0부터 시작하므로 +1 필요\n    const day = ('0' + date.getDate()).slice(-2);\n    const hours = ('0' + date.getHours()).slice(-2);\n    const minutes = ('0' + date.getMinutes()).slice(-2);\n    const second = ('0' + date.getSeconds()).slice(-2);\n\n    return `${year}${month}${day}${hours}${minutes}${second}`;\n}\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 300,
+        "wires": [
+            [
+                "6a0e3eb59f13c897"
+            ]
+        ]
+    },
+    {
+        "id": "68892d80c088db66",
+        "type": "function",
+        "z": "4fceb79b845bb7d1",
+        "name": "sealing check",
+        "func": "const now = new Date();\nconst formattedDate = formatDate(now);\nvar sen3_pulse = flow.get('sen3_pulse');\nvar productionCode = flow.get('productionLOT');\n\nif (msg.payload[3] === 1 && sen3_pulse === 1) {\n    console.log(msg.payload[16]);\n    \n    if (msg.payload[16] === 1) {\n        \n        msg.topic = \n        `UPDATE rcs.production_results\n        SET C_delay = ${msg.payload[9]},\n            C_Err = '${msg.payload[12]}',\n            C_Err_time = SYSDATE(),\n            defect_count = ${flow.get('errCount') + 1}\n        WHERE LOT = '${productionCode}'`;\n\n        flow.set('sen3_pulse', 0);\n        flow.set('errCount', flow.get('errCount') + 1);\n        \n        console.log('C 센서 에러 카운트: ' + flow.get('errCount'));\n\n    } else if (msg.payload[16] === 0) {\n\n        msg.topic = \n        `UPDATE rcs.production_results\n        SET defect_count = ${flow.get('errCount')}\n        WHERE LOT = '${productionCode}'`;\n\n        flow.set('sen3_pulse', 0);\n\n        console.log('C 센서 에러 카운트: ' + flow.get('errCount'));\n        console.log('LOT: ' + productionCode);\n    }\n\n} else if (msg.payload[3] === 0) {\n    flow.set('sen3_pulse', 1);\n}\n\nfunction formatDate(date) {\n    const year = date.getFullYear();\n    const month = ('0' + (date.getMonth() + 1)).slice(-2);  // 월은 0부터 시작하므로 +1 필요\n    const day = ('0' + date.getDate()).slice(-2);\n    const hours = ('0' + date.getHours()).slice(-2);\n    const minutes = ('0' + date.getMinutes()).slice(-2);\n    const second = ('0' + date.getSeconds()).slice(-2);\n\n    return `${year}${month}${day}${hours}${minutes}${second}`;\n}\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 380,
+        "wires": [
+            [
+                "6a0e3eb59f13c897"
+            ]
+        ]
+    },
+    {
+        "id": "911f2c8a90c80a25",
+        "type": "function",
+        "z": "4fceb79b845bb7d1",
+        "name": "sensor export",
+        "func": "var payload = msg.payload;\nvar productionCode = flow.get('productionLOT');\n\n// Prepare SQL query\nmsg.topic = `\n    UPDATE production_results\n    SET A_Sen = ${payload[1]},\n        B_Sen = ${payload[2]},\n        C_Sen = ${payload[3]},\n        Con_ST = ${payload[0]}\n    WHERE LOT = '${productionCode}';\n`;\n\n// Pass the updated SQL query to the next node (e.g., MySQL node)\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 460,
+        "wires": [
+            [
+                "6a0e3eb59f13c897"
+            ]
+        ]
+    },
+    {
+        "id": "c27c0fd653b5e9ed",
+        "type": "modbus-client",
+        "name": "",
+        "clienttype": "tcp",
+        "bufferCommands": true,
+        "stateLogEnabled": false,
+        "queueLogEnabled": false,
+        "failureLogEnabled": true,
+        "tcpHost": "10.10.32.221",
+        "tcpPort": "502",
+        "tcpType": "DEFAULT",
+        "serialPort": "/dev/ttyUSB",
+        "serialType": "RTU-BUFFERD",
+        "serialBaudrate": "9600",
+        "serialDatabits": "8",
+        "serialStopbits": "1",
+        "serialParity": "none",
+        "serialConnectionDelay": "100",
+        "serialAsciiResponseStartDelimiter": "0x3A",
+        "unit_id": "1",
+        "commandDelay": "1",
+        "clientTimeout": "1000",
+        "reconnectOnTimeout": true,
+        "reconnectTimeout": "2000",
+        "parallelUnitIdsAllowed": true,
+        "showErrors": false,
+        "showWarnings": true,
+        "showLogs": true
+    },
+    {
+        "id": "bb2303be41a436bf",
+        "type": "MySQLdatabase",
+        "name": "",
+        "host": "10.10.32.232",
+        "port": "3306",
+        "db": "rcs",
+        "tz": "",
+        "charset": "UTF8"
+    }
+]
